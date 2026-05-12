@@ -1,0 +1,17 @@
+service:
+  name: animetsu-api
+  type: web
+  ports:
+    - port: 8080
+      protocol: http
+  routes:
+    - path: /
+  health_checks:
+    - http:
+        path: /health
+        port: 8080
+  env:
+    - key: PORT
+      value: "8080"
+    - key: RATE_LIMIT_RPM
+      value: "120"

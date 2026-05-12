@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: animetsu-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: API_KEY
+        sync: false
+      - key: RATE_LIMIT_RPM
+        value: "120"
+      - key: LOG_LEVEL
+        value: info
