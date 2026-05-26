@@ -60,7 +60,7 @@ This wrapper fixes all of that, in one binary, behind a clean REST surface.
 
 ```bash
 git clone <your fork>
-cd animetsu-api-go
+cd animetsu-api
 go run ./cmd/server   # listens on :8080
 ```
 
