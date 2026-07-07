@@ -308,16 +308,20 @@ func (h *H) Servers(c *fiber.Ctx) error {
 }
 
 func absolutizeSource(s rawSource, hlsBase string) string {
+	// Already an absolute URL — use as-is.
 	if strings.HasPrefix(s.URL, "http://") || strings.HasPrefix(s.URL, "https://") {
 		return s.URL
 	}
-	if !s.NeedProxy {
-		return s.URL
+	// Relative path — must be turned into an absolute URL regardless of
+	// need_proxy so the player (or our HLS proxy) can actually fetch it.
+	// When need_proxy is true the path goes through hlsBase (the stream
+	// proxy); otherwise we just prepend hlsBase as well since the cipher
+	// path is always routed through the same proxy tier.
+	rel := s.URL
+	if !strings.HasPrefix(rel, "/") {
+		rel = "/" + rel
 	}
-	if !strings.HasPrefix(s.URL, "/") {
-		return hlsBase + "/" + s.URL
-	}
-	return hlsBase + s.URL
+	return hlsBase + rel
 }
 
 // Watch resolves playable sources for one episode, with optional automatic
