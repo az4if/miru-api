@@ -222,8 +222,8 @@ All JSON responses are wrapped in:
 
 ### `/api/proxy/hls`
 
-The HLS servers (`pahe`, `kite`, `fsoft`) return m3u8 playlists whose URIs
-point straight at `mega-cloud.top`. A browser can't hit that host directly
+The HLS servers (`kite`, `dio`, `meg`, `sage`) return m3u8 playlists whose URIs
+point straight at `swiftstream.top`. A browser can't hit that host directly
 because of CORS, and even server-side fetches need the right `Referer`. This
 proxy:
 
@@ -274,9 +274,9 @@ Every value has a sane default. See `.env.example`.
 | `CACHE_DEFAULT_TTL` | `10m` | In-memory cache TTL when a handler doesn't override |
 | `UPSTREAM_TIMEOUT` | `15s` | Per-request timeout for JSON calls (NOT proxy streams) |
 | `UPSTREAM_BASE` | `https://animetsu.live/v2` | Override only if Animetsu changes hostnames |
-| `HLS_PROXY_BASE` | `https://mega-cloud.top/proxy` | Same |
+| `HLS_PROXY_BASE` | `https://swiftstream.top/proxy` | Same |
 | `UPSTREAM_REFERER` | `https://animetsu.live/` | Forwarded upstream |
-| `UPSTREAM_USER_AGENT` | _Chrome 146 desktop_ | Forwarded upstream |
+| `UPSTREAM_USER_AGENT` | _Chrome 147 desktop_ | Forwarded upstream |
 | `LOG_LEVEL` | `info` | `trace` / `debug` / `info` / `warn` / `error` |
 
 ---
