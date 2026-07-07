@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -48,7 +49,7 @@ func (c *Cache) Set(key string, val any, fresh time.Duration) {
 	c.c.Set(key, &entry{val: val, freshTTL: fresh, freshAt: time.Now()}, fresh*3)
 }
 
-func (c *Cache) GetOrFetch(key string, ttl time.Duration, fn func() (any, error)) (any, error) {
+func (c *Cache) GetOrFetch(ctx context.Context, key string, ttl time.Duration, fn func(ctx context.Context) (any, error)) (any, error) {
 	if v, ok := c.Get(key); ok {
 		// Check freshness; if stale, kick a background refresh.
 		if raw, found := c.c.Get(key); found {
@@ -63,7 +64,7 @@ func (c *Cache) GetOrFetch(key string, ttl time.Duration, fn func() (any, error)
 	if !loaded {
 		f.wg.Add(1)
 		defer func() { f.wg.Done(); c.flights.Delete(key) }()
-		v, err := fn()
+		v, err := fn(ctx)
 		f.val, f.err = v, err
 		if err == nil {
 			c.Set(key, v, ttl)
@@ -74,12 +75,12 @@ func (c *Cache) GetOrFetch(key string, ttl time.Duration, fn func() (any, error)
 	return f.val, f.err
 }
 
-func (c *Cache) refresh(key string, ttl time.Duration, fn func() (any, error)) {
+func (c *Cache) refresh(key string, ttl time.Duration, fn func(ctx context.Context) (any, error)) {
 	if _, loaded := c.flights.LoadOrStore(key+":refresh", &flight{}); loaded {
 		return // a refresh is already running
 	}
 	defer c.flights.Delete(key + ":refresh")
-	if v, err := fn(); err == nil {
+	if v, err := fn(context.Background()); err == nil {
 		c.Set(key, v, ttl)
 	}
 }

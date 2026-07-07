@@ -34,8 +34,8 @@ func ok(c *fiber.Ctx, data any) error {
 	return c.JSON(models.Envelope{Success: true, Data: data})
 }
 
-func cached(h *H, c *fiber.Ctx, key string, ttl time.Duration, fn func() (any, error)) error {
-	v, err := h.Cache.GetOrFetch(key, ttl, fn)
+func cached(h *H, c *fiber.Ctx, key string, ttl time.Duration, fn func(ctx context.Context) (any, error)) error {
+	v, err := h.Cache.GetOrFetch(c.Context(), key, ttl, fn)
 	if err != nil {
 		return mapUpstreamErr(err)
 	}
@@ -98,15 +98,15 @@ func (h *H) Root(c *fiber.Ctx) error {
 // ----- discovery ------------------------------------------------------------
 
 func (h *H) Home(c *fiber.Ctx) error {
-	return cached(h, c, "home", 10*time.Minute, func() (any, error) {
-		return h.fetchJSON(c.Context(), "/api/anime/home")
+	return cached(h, c, "home", 10*time.Minute, func(ctx context.Context) (any, error) {
+		return h.fetchJSON(ctx, "/api/anime/home")
 	})
 }
 
 func (h *H) rail(name string, _ time.Duration) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		v, err := h.Cache.GetOrFetch("home", 10*time.Minute, func() (any, error) {
-			return h.fetchJSON(c.Context(), "/api/anime/home")
+		v, err := h.Cache.GetOrFetch(c.Context(), "home", 10*time.Minute, func(ctx context.Context) (any, error) {
+			return h.fetchJSON(ctx, "/api/anime/home")
 		})
 		if err != nil {
 			return mapUpstreamErr(err)
@@ -134,14 +134,14 @@ func (h *H) Recent(c *fiber.Ctx) error {
 	page := c.Query("page", "1")
 	per := c.Query("per_page", "12")
 	key := "recent:p=" + page + ":n=" + per
-	return cached(h, c, key, 2*time.Minute, func() (any, error) {
-		return h.fetchJSON(c.Context(), "/api/anime/recent?page="+page+"&per_page="+per)
+	return cached(h, c, key, 2*time.Minute, func(ctx context.Context) (any, error) {
+		return h.fetchJSON(ctx, "/api/anime/recent?page="+page+"&per_page="+per)
 	})
 }
 
 func (h *H) Schedule(c *fiber.Ctx) error {
-	return cached(h, c, "schedule", 30*time.Minute, func() (any, error) {
-		return h.fetchJSON(c.Context(), "/api/anime/schedule")
+	return cached(h, c, "schedule", 30*time.Minute, func(ctx context.Context) (any, error) {
+		return h.fetchJSON(ctx, "/api/anime/schedule")
 	})
 }
 
@@ -170,8 +170,8 @@ func (h *H) Search(c *fiber.Ctx) error {
 		}
 	}
 	qs := client.BuildQuery(params)
-	return cached(h, c, "search:"+qs, 5*time.Minute, func() (any, error) {
-		return h.fetchJSON(c.Context(), "/api/anime/search?"+qs)
+	return cached(h, c, "search:"+qs, 5*time.Minute, func(ctx context.Context) (any, error) {
+		return h.fetchJSON(ctx, "/api/anime/search?"+qs)
 	})
 }
 
@@ -180,8 +180,8 @@ func (h *H) Info(c *fiber.Ctx) error {
 	if id == "" {
 		return fiber.NewError(http.StatusBadRequest, "id required")
 	}
-	return cached(h, c, "info:"+id, 30*time.Minute, func() (any, error) {
-		return h.fetchJSON(c.Context(), "/api/anime/info/"+id)
+	return cached(h, c, "info:"+id, 30*time.Minute, func(ctx context.Context) (any, error) {
+		return h.fetchJSON(ctx, "/api/anime/info/"+id)
 	})
 }
 
@@ -190,8 +190,8 @@ func (h *H) Episodes(c *fiber.Ctx) error {
 	if id == "" {
 		return fiber.NewError(http.StatusBadRequest, "id required")
 	}
-	return cached(h, c, "eps:"+id, 15*time.Minute, func() (any, error) {
-		return h.fetchJSON(c.Context(), "/api/anime/eps/"+id)
+	return cached(h, c, "eps:"+id, 15*time.Minute, func(ctx context.Context) (any, error) {
+		return h.fetchJSON(ctx, "/api/anime/eps/"+id)
 	})
 }
 
@@ -201,8 +201,8 @@ func (h *H) Views(c *fiber.Ctx) error {
 	if id == "" || ep == "" {
 		return fiber.NewError(http.StatusBadRequest, "id and ep required")
 	}
-	return cached(h, c, "views:"+id+":"+ep, 1*time.Minute, func() (any, error) {
-		return h.fetchJSON(c.Context(), "/api/anime/views/"+id+"/"+ep)
+	return cached(h, c, "views:"+id+":"+ep, 1*time.Minute, func(ctx context.Context) (any, error) {
+		return h.fetchJSON(ctx, "/api/anime/views/"+id+"/"+ep)
 	})
 }
 
@@ -253,10 +253,10 @@ func (h *H) Servers(c *fiber.Ctx) error {
 	}
 	srcType := normalizeSourceType(c)
 	key := "servers:" + id + ":" + ep + ":" + srcType
-	return cached(h, c, key, 5*time.Minute, func() (any, error) {
+	return cached(h, c, key, 5*time.Minute, func(ctx context.Context) (any, error) {
 		// upstream list
 		var list []models.Server
-		if err := h.Client.GetJSON(c.Context(), "/api/anime/servers/"+id+"/"+ep, &list); err != nil {
+		if err := h.Client.GetJSON(ctx, "/api/anime/servers/"+id+"/"+ep, &list); err != nil {
 			return nil, err
 		}
 		// probe each in parallel
@@ -276,9 +276,9 @@ func (h *H) Servers(c *fiber.Ctx) error {
 			go func() {
 				defer wg.Done()
 				start := time.Now()
-				ctx, cancel := context.WithTimeout(c.Context(), 8*time.Second)
+				pctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 				defer cancel()
-				rw, err := h.fetchWatch(ctx, id, ep, s.ID, srcType)
+				rw, err := h.fetchWatch(pctx, id, ep, s.ID, srcType)
 				ms := int(time.Since(start).Milliseconds())
 				if err != nil || rw == nil || len(rw.Sources) == 0 {
 					out[i] = result{ID: s.ID, Default: s.Default, Tip: s.Tip, Working: false, LatencyMS: ms}
@@ -286,7 +286,7 @@ func (h *H) Servers(c *fiber.Ctx) error {
 				}
 				// Probe the first absolutized URL. If it 4xx/5xx, mark not working.
 				abs := absolutizeSource(rw.Sources[0], h.HLSProxyBase)
-				code, _, perr := h.Client.HeadOrGet(ctx, abs)
+				code, _, perr := h.Client.HeadOrGet(pctx, abs)
 				working := perr == nil && code < 400
 				out[i] = result{
 					ID: s.ID, Default: s.Default, Tip: s.Tip,
@@ -337,9 +337,15 @@ func (h *H) Watch(c *fiber.Ctx) error {
 	srcType := normalizeSourceType(c)
 	fallback := c.Query("fallback", "true") != "false"
 
+	scheme := "https"
+	if c.Protocol() == "http" {
+		scheme = "http"
+	}
+	selfBase := scheme + "://" + c.Hostname()
+
 	cacheKey := "watch:" + id + ":" + ep + ":" + server + ":" + srcType + ":fb=" + strconv.FormatBool(fallback)
-	return cached(h, c, cacheKey, 5*time.Minute, func() (any, error) {
-		order := buildServerOrder(h, c.Context(), id, ep, server, fallback)
+	return cached(h, c, cacheKey, 5*time.Minute, func(ctx context.Context) (any, error) {
+		order := buildServerOrder(h, ctx, id, ep, server, fallback)
 
 		var (
 			rw         *rawWatch
@@ -347,8 +353,8 @@ func (h *H) Watch(c *fiber.Ctx) error {
 			lastErr    error
 		)
 		for _, sv := range order {
-			ctx, cancel := context.WithTimeout(c.Context(), 8*time.Second)
-			r, err := h.fetchWatch(ctx, id, ep, sv, srcType)
+			pctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+			r, err := h.fetchWatch(pctx, id, ep, sv, srcType)
 			cancel()
 			if err != nil || r == nil || len(r.Sources) == 0 {
 				lastErr = err
@@ -356,8 +362,8 @@ func (h *H) Watch(c *fiber.Ctx) error {
 			}
 			// Quick probe of first source.
 			abs := absolutizeSource(r.Sources[0], h.HLSProxyBase)
-			pctx, pcancel := context.WithTimeout(c.Context(), 5*time.Second)
-			code, _, perr := h.Client.HeadOrGet(pctx, abs)
+			pctx2, pcancel := context.WithTimeout(ctx, 5*time.Second)
+			code, _, perr := h.Client.HeadOrGet(pctx2, abs)
 			pcancel()
 			if !fallback || (perr == nil && code < 400) {
 				rw = r
@@ -372,12 +378,6 @@ func (h *H) Watch(c *fiber.Ctx) error {
 			}
 			return nil, fiber.NewError(http.StatusBadGateway, "no working server returned playable sources")
 		}
-
-		scheme := "https"
-		if c.Protocol() == "http" {
-			scheme = "http"
-		}
-		selfBase := scheme + "://" + c.Hostname()
 
 		out := models.WatchResponse{
 			ID:         id,
@@ -556,7 +556,7 @@ func buildServerOrder(h *H, ctx context.Context, id, ep, requested string, fallb
 // fetchServerList returns server IDs from the upstream, default-first.
 func (h *H) fetchServerList(ctx context.Context, id, ep string) []string {
 	key := "serverlist:" + id + ":" + ep
-	v, err := h.Cache.GetOrFetch(key, 5*time.Minute, func() (any, error) {
+	v, err := h.Cache.GetOrFetch(ctx, key, 5*time.Minute, func(ctx context.Context) (any, error) {
 		var list []models.Server
 		if err := h.Client.GetJSON(ctx, "/api/anime/servers/"+id+"/"+ep, &list); err != nil {
 			return nil, err

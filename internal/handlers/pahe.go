@@ -41,7 +41,7 @@ func (h *H) fetchPaheReleases(
 	}
 
 	cacheKey := "pahe:dl:" + id + ":" + ep
-	v, err := h.Cache.GetOrFetch(cacheKey, paheCacheTTL, func() (any, error) {
+	v, err := h.Cache.GetOrFetch(ctx, cacheKey, paheCacheTTL, func(ctx context.Context) (any, error) {
 		return h.fetchPaheUpstream(ctx, id, ep)
 	})
 	if err != nil {

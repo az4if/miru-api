@@ -295,7 +295,7 @@ func (h *H) fetchToshoReleases(
 
 func (h *H) resolveTitleAndSynonyms(ctx context.Context, id string) (string, []string, error) {
 	key := "info:" + id
-	v, err := h.Cache.GetOrFetch(key, 30*time.Minute, func() (any, error) {
+	v, err := h.Cache.GetOrFetch(ctx, key, 30*time.Minute, func(ctx context.Context) (any, error) {
 		return h.fetchJSON(ctx, "/api/anime/info/"+id)
 	})
 	if err != nil {
@@ -374,7 +374,7 @@ func buildToshoQueries(title string, synonyms []string, ep string) []string {
 
 func (h *H) fetchTosho(ctx context.Context, query string) ([]toshoEntry, error) {
 	cacheKey := "tosho:" + strings.ToLower(query)
-	v, err := h.Cache.GetOrFetch(cacheKey, dlCacheTTL, func() (any, error) {
+	v, err := h.Cache.GetOrFetch(ctx, cacheKey, dlCacheTTL, func(ctx context.Context) (any, error) {
 		url := toshoBase + "?q=" + queryEscape(query)
 		ctx2, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
