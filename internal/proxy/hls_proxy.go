@@ -3,10 +3,11 @@ package proxy
 import (
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
-	"github.com/animetsu/api/internal/client"
-	"github.com/animetsu/api/pkg/hls"
+	"github.com/miru/api/internal/client"
+	"github.com/miru/api/pkg/hls"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -32,8 +33,21 @@ func SubtitleHandler(c *client.Client) fiber.Handler {
 		if !strings.HasPrefix(target, "http://") && !strings.HasPrefix(target, "https://") {
 			return fiber.NewError(fiber.StatusBadRequest, "url must be absolute http(s)")
 		}
+		referer := ctx.Query("referer")
+		refVal, originVal := DetermineReferer(target, referer)
+
 		extra := http.Header{}
 		extra.Set("Accept-Encoding", "identity")
+		if refVal != "" {
+			extra.Set("Referer", refVal)
+		} else {
+			extra.Set("Referer", "")
+		}
+		if originVal != "" {
+			extra.Set("Origin", originVal)
+		} else {
+			extra.Set("Origin", "")
+		}
 		resp, err := c.GetStream(ctx.Context(), target, extra)
 		if err != nil {
 			return fiber.NewError(fiber.StatusBadGateway, "upstream fetch failed: "+err.Error())
@@ -67,8 +81,21 @@ func HLSHandler(c *client.Client) fiber.Handler {
 			return fiber.NewError(fiber.StatusBadRequest, "url must be absolute http(s)")
 		}
 
+		referer := ctx.Query("referer")
+		refVal, originVal := DetermineReferer(target, referer)
+
 		extra := http.Header{}
 		extra.Set("Accept-Encoding", "identity")
+		if refVal != "" {
+			extra.Set("Referer", refVal)
+		} else {
+			extra.Set("Referer", "")
+		}
+		if originVal != "" {
+			extra.Set("Origin", originVal)
+		} else {
+			extra.Set("Origin", "")
+		}
 		clientRange := ctx.Get("Range")
 		if clientRange != "" {
 			extra.Set("Range", clientRange)
@@ -109,7 +136,11 @@ func HLSHandler(c *client.Client) fiber.Handler {
 			if ctx.Protocol() == "http" {
 				scheme = "http"
 			}
-			prefix := scheme + "://" + ctx.Hostname() + "/api/proxy/hls?url="
+			prefix := scheme + "://" + ctx.Hostname() + "/api/proxy/hls?"
+			if refVal != "" {
+				prefix += "referer=" + url.QueryEscape(refVal) + "&"
+			}
+			prefix += "url="
 			rewritten := hls.Rewrite(string(body), target, prefix)
 			ctx.Set("Content-Type", "application/vnd.apple.mpegurl")
 			ctx.Set("Cache-Control", "public, max-age=15")
@@ -182,4 +213,51 @@ func streamThrough(ctx *fiber.Ctx, resp *http.Response, clientRequestedRange boo
 		return ctx.SendStream(resp.Body, contentLength)
 	}
 	return ctx.SendStream(resp.Body)
+}
+
+func DetermineReferer(targetURL, requestedReferer string) (string, string) {
+	if requestedReferer != "" {
+		refURL, err := url.Parse(requestedReferer)
+		if err == nil && refURL.Host != "" {
+			origin := refURL.Scheme + "://" + refURL.Host
+			return requestedReferer, origin
+		}
+		return requestedReferer, ""
+	}
+
+	u, err := url.Parse(targetURL)
+	if err != nil {
+		return "", ""
+	}
+	host := strings.ToLower(u.Host)
+
+	// Domain overrides.
+	if strings.Contains(host, "ultracloud.cc") || strings.Contains(host, "megacloud") {
+		return "https://megacloud.tv/", ""
+	}
+	if strings.Contains(host, "rapid-cloud") {
+		return "https://rapid-cloud.co/", ""
+	}
+	if strings.Contains(host, "rabbitstream") {
+		return "https://rabbitstream.net/", ""
+	}
+	if strings.Contains(host, "aniwatchtv") {
+		return "https://aniwatchtv.to/", ""
+	}
+	if strings.Contains(host, "hianime") {
+		return "https://hianime.to/", ""
+	}
+	if strings.Contains(host, "miruro") {
+		return "https://miruro.to/", ""
+	}
+	if strings.Contains(host, "animex") {
+		return "https://animex.one/", ""
+	}
+
+	// General fallback: use the target's own origin as referer.
+	if u.Scheme != "" && u.Host != "" {
+		origin := u.Scheme + "://" + u.Host
+		return origin + "/", origin
+	}
+	return "", ""
 }

@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: animetsu-api
+    name: miru-api
     env: docker
     plan: free
     healthCheckPath: /healthz

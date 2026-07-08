@@ -2,14 +2,14 @@
 package server
 
 import (
-	"github.com/animetsu/api/internal/cache"
-	"github.com/animetsu/api/internal/client"
-	"github.com/animetsu/api/internal/config"
-	"github.com/animetsu/api/internal/docs"
-	"github.com/animetsu/api/internal/handlers"
-	mw "github.com/animetsu/api/internal/middleware"
-	"github.com/animetsu/api/internal/models"
-	"github.com/animetsu/api/internal/proxy"
+	"github.com/miru/api/internal/cache"
+	"github.com/miru/api/internal/client"
+	"github.com/miru/api/internal/config"
+	"github.com/miru/api/internal/docs"
+	"github.com/miru/api/internal/handlers"
+	mw "github.com/miru/api/internal/middleware"
+	"github.com/miru/api/internal/models"
+	"github.com/miru/api/internal/proxy"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -20,7 +20,7 @@ import (
 
 func New(cfg *config.Config, log zerolog.Logger) *fiber.App {
 	app := fiber.New(fiber.Config{
-		AppName:               "animetsu-api",
+		AppName:               "miru-api",
 		DisableStartupMessage: true,
 		ErrorHandler:          errorHandler,
 		ReadTimeout:           cfg.UpstreamTimeout * 2,

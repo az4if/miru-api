@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/animetsu/api/internal/config"
+	"github.com/miru/api/internal/config"
 	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog"
 )

@@ -1,4 +1,4 @@
-// Animetsu API server entrypoint.
+// Miru API server entrypoint.
 
 package main
 
@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/animetsu/api/internal/config"
-	"github.com/animetsu/api/internal/logger"
-	"github.com/animetsu/api/internal/server"
+	"github.com/miru/api/internal/config"
+	"github.com/miru/api/internal/logger"
+	"github.com/miru/api/internal/server"
 )
 
 func main() {
@@ -24,7 +24,7 @@ func main() {
 	// Start HTTP server in a goroutine so we can wait for shutdown signals.
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info().Str("addr", ":"+cfg.Port).Msg("animetsu-api listening")
+		log.Info().Str("addr", ":"+cfg.Port).Msg("miru-api listening")
 		if err := app.Listen(":" + cfg.Port); err != nil {
 			errCh <- err
 		}

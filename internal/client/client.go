@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/animetsu/api/internal/config"
+	"github.com/miru/api/internal/config"
 )
 
 type Client struct {
@@ -115,6 +115,10 @@ func (c *Client) doRaw(ctx context.Context, hc *http.Client, target string, extr
 	}
 	c.applyHeaders(req)
 	for k, vs := range extraHeaders {
+		if len(vs) == 1 && vs[0] == "" {
+			req.Header.Del(k)
+			continue
+		}
 		for _, v := range vs {
 			req.Header.Set(k, v)
 		}

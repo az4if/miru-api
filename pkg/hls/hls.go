@@ -16,7 +16,7 @@ func Rewrite(playlist, baseURL, proxyPrefix string) string {
 		base = nil
 	}
 	wrap := func(raw string) string {
-		abs := absolutize(raw, base)
+		abs := Absolutize(raw, base)
 		return proxyPrefix + url.QueryEscape(abs)
 	}
 	lines := strings.Split(playlist, "\n")
@@ -41,7 +41,7 @@ func Rewrite(playlist, baseURL, proxyPrefix string) string {
 	return strings.Join(lines, "\n")
 }
 
-func absolutize(ref string, base *url.URL) string {
+func Absolutize(ref string, base *url.URL) string {
 	if ref == "" {
 		return ref
 	}

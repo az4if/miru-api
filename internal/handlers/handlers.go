@@ -5,16 +5,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/animetsu/api/internal/cache"
-	"github.com/animetsu/api/internal/client"
-	"github.com/animetsu/api/internal/models"
+	"github.com/miru/api/internal/cache"
+	"github.com/miru/api/internal/client"
+	"github.com/miru/api/internal/models"
+	"github.com/miru/api/internal/proxy"
+	"github.com/miru/api/pkg/hls"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -62,7 +67,7 @@ func (h *H) fetchJSON(ctx context.Context, path string) (json.RawMessage, error)
 func (h *H) Health(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"ok":      true,
-		"name":    "animetsu-api",
+		"name":    "miru-api",
 		"version": "1.0.0",
 		"now":     time.Now().UTC().Format(time.RFC3339),
 	})
@@ -70,7 +75,7 @@ func (h *H) Health(c *fiber.Ctx) error {
 
 func (h *H) Root(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
-		"name":    "animetsu-api",
+		"name":    "miru-api",
 		"ok":      true,
 		"version": "1.0.0",
 		"docs":    "/docs",
@@ -390,7 +395,11 @@ func (h *H) Watch(c *fiber.Ctx) error {
 		if n, err := strconv.Atoi(ep); err == nil {
 			out.Episode = n
 		}
+		var expandedSources []rawSource
 		for _, s := range rw.Sources {
+			expandedSources = append(expandedSources, h.expandMasterPlaylist(ctx, s)...)
+		}
+		for _, s := range expandedSources {
 			abs := absolutizeSource(s, h.HLSProxyBase)
 			// Every source is HLS in this build; proxy it through /api/proxy/hls.
 			out.Sources = append(out.Sources, models.WatchSource{
@@ -475,9 +484,13 @@ func (h *H) Download(c *fiber.Ctx) error {
 		}
 		return 0
 	}
+	var expandedSources []rawSource
+	for _, s := range rw.Sources {
+		expandedSources = append(expandedSources, h.expandMasterPlaylist(c.Context(), s)...)
+	}
 	var best rawSource
 	if wantQ != "" {
-		for _, s := range rw.Sources {
+		for _, s := range expandedSources {
 			if strings.Contains(strings.ToLower(s.Quality), wantQ) {
 				best = s
 				break
@@ -485,8 +498,8 @@ func (h *H) Download(c *fiber.Ctx) error {
 		}
 	}
 	if best.URL == "" {
-		best = rw.Sources[0]
-		for _, s := range rw.Sources[1:] {
+		best = expandedSources[0]
+		for _, s := range expandedSources[1:] {
 			if scoreOf(s.Quality) > scoreOf(best.Quality) {
 				best = s
 			}
@@ -545,7 +558,9 @@ func buildServerOrder(h *H, ctx context.Context, id, ep, requested string, fallb
 	}
 	servers := h.fetchServerList(ctx, id, ep)
 	if len(servers) == 0 {
-		servers = []string{"pahe", "kite", "meg", "kiss", "zoro", "fsoft"}
+		servers = []string{"kite", "zoro", "pahe", "meg", "kiss", "fsoft"}
+	} else {
+		servers = prioritizeServers(servers)
 	}
 	if requested != "" && requested != "auto" {
 		return append([]string{requested}, removeStr(servers, requested)...)
@@ -577,7 +592,7 @@ func (h *H) fetchServerList(ctx context.Context, id, ep string) []string {
 				out = append(out, s.ID)
 			}
 		}
-		return out, nil
+		return prioritizeServers(out), nil
 	})
 	if err != nil {
 		return nil
@@ -663,4 +678,136 @@ func sanitizeSubURL(u string) string {
 		}
 	}
 	return u
+}
+
+var (
+	hlsNameAttrRe = regexp.MustCompile(`NAME="([^"]+)"`)
+	hlsResAttrRe  = regexp.MustCompile(`RESOLUTION=([0-9xX]+)`)
+)
+
+func prioritizeServers(servers []string) []string {
+	preferred := []string{"kite", "zoro"}
+	out := make([]string, 0, len(servers))
+	for _, p := range preferred {
+		for _, s := range servers {
+			if s == p {
+				out = append(out, s)
+				break
+			}
+		}
+	}
+	for _, s := range servers {
+		isPreferred := false
+		for _, p := range preferred {
+			if s == p {
+				isPreferred = true
+				break
+			}
+		}
+		if !isPreferred {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func (h *H) expandMasterPlaylist(ctx context.Context, src rawSource) []rawSource {
+	abs := absolutizeSource(src, h.HLSProxyBase)
+
+	lower := strings.ToLower(abs)
+	if !strings.HasSuffix(lower, ".m3u8") && !strings.Contains(lower, ".m3u8?") {
+		return []rawSource{src}
+	}
+
+	referer := ""
+	refVal, originVal := proxy.DetermineReferer(abs, referer)
+
+	extra := http.Header{}
+	extra.Set("Accept-Encoding", "identity")
+	if refVal != "" {
+		extra.Set("Referer", refVal)
+	}
+	if originVal != "" {
+		extra.Set("Origin", originVal)
+	}
+
+	resp, err := h.Client.GetRaw(ctx, abs, extra)
+	if err != nil {
+		return []rawSource{src}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return []rawSource{src}
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1 MiB cap
+	if err != nil {
+		return []rawSource{src}
+	}
+
+	playlistStr := string(body)
+	if !strings.Contains(playlistStr, "#EXTM3U") {
+		return []rawSource{src}
+	}
+
+	if !strings.Contains(playlistStr, "#EXT-X-STREAM-INF") {
+		return []rawSource{src}
+	}
+
+	var variants []rawSource
+	lines := strings.Split(playlistStr, "\n")
+
+	base, err := url.Parse(abs)
+	if err != nil {
+		base = nil
+	}
+
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(line, "#EXT-X-STREAM-INF:") {
+			continue
+		}
+
+		quality := "auto"
+		if nameMatch := hlsNameAttrRe.FindStringSubmatch(line); len(nameMatch) == 2 {
+			quality = strings.Trim(nameMatch[1], `"`+` `)
+		} else if resMatch := hlsResAttrRe.FindStringSubmatch(line); len(resMatch) == 2 {
+			resParts := strings.Split(resMatch[1], "x")
+			if len(resParts) == 2 {
+				quality = resParts[1] + "p"
+			}
+		}
+
+		var streamURL string
+		for j := i + 1; j < len(lines); j++ {
+			nextLine := strings.TrimSpace(lines[j])
+			if nextLine == "" {
+				continue
+			}
+			if strings.HasPrefix(nextLine, "#") {
+				break
+			}
+			streamURL = nextLine
+			i = j
+			break
+		}
+
+		if streamURL != "" {
+			variantURL := hls.Absolutize(streamURL, base)
+			variants = append(variants, rawSource{
+				Quality:   quality,
+				URL:       variantURL,
+				Type:      src.Type,
+				OldHLS:    true,
+				NeedProxy: src.NeedProxy,
+			})
+		}
+	}
+
+	if len(variants) > 0 {
+		return variants
+	}
+
+	return []rawSource{src}
 }

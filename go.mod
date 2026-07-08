@@ -1,4 +1,4 @@
-module github.com/animetsu/api
+module github.com/miru/api
 
 go 1.22
 

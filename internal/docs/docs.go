@@ -9,7 +9,7 @@ const swaggerHTML = `<!doctype html>
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Animetsu API — Docs</title>
+<title>Miru API — Docs</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
 <style>body{margin:0;background:#0b0d12} .topbar{display:none}</style>
 </head>
@@ -36,7 +36,7 @@ const demoHTML = `<!doctype html>
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>Animetsu — Player</title>
+<title>Miru — Player</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -298,7 +298,7 @@ details pre{margin:0;padding:0 14px 14px;color:#cdd5e0;font-size:12px;max-height
 <div class="shell">
   <div class="head">
     <div class="logo"></div>
-    <div class="brand">Animetsu Player <small>HLS · Soft subs · Auto server</small></div>
+    <div class="brand">Miru Player <small>HLS · Soft subs · Auto server</small></div>
     <div class="spacer"></div>
     <a class="tag" href="/docs"><span class="dot"></span>API · v1.0.0</a>
   </div>
@@ -892,7 +892,7 @@ $("probe").onclick = () => probeServers(false);
 // Two sources, switchable in one click via the Pahe / Tosho tabs:
 //   - Pahe  (default) → animepahe per-episode MP4s. Small (~30-100 MB),
 //                       1-click download via pahe.win → kwik.cx.
-//                       Matches the dropdown animetsu.live's website shows.
+//                       Matches the dropdown miru.live's website shows.
 //   - Tosho           → Anime Tosho p2p / magnet / DDL mirrors. Full
 //                       quality, every fansub group, every episode.
 const dlModal = $("dlModal"), dlBody = $("dlBody"), dlFilters = $("dlFilters"), dlTitle = $("dlTitle"), dlSub = $("dlSub");

@@ -17,14 +17,14 @@ import (
 )
 
 const (
-	paheUpstreamBase = "https://animetsu.live/v2/api/anime/dl"
+	paheUpstreamBase = "https://miru.live/v2/api/anime/dl"
 	paheCacheTTL     = 30 * time.Minute
 	paheTimeout      = 12 * time.Second
 	paheUA           = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
 		"(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
 )
 
-// paheUpstreamRow mirrors the JSON returned by animetsu.live's dl endpoint.
+// paheUpstreamRow mirrors the JSON returned by miru.live's dl endpoint.
 type paheUpstreamRow struct {
 	Link string `json:"link"`
 	Name string `json:"name"`
@@ -130,14 +130,14 @@ func (h *H) fetchPaheReleases(
 		"query":   title,
 		"upstream": fiber.Map{
 			"endpoint": paheUpstreamBase + "/" + id + "/" + ep,
-			"provider": "animetsu.live",
+			"provider": "miru.live",
 			"note":     "links are pahe.win redirects → continue to kwik to download the MP4",
 		},
 	}, nil
 }
 
 // fetchPaheUpstream pulls the JSON list of pahe.win links for a given AniList
-// id + episode from animetsu.live's public download endpoint.
+// id + episode from miru.live's public download endpoint.
 func (h *H) fetchPaheUpstream(ctx context.Context, id, ep string) ([]paheUpstreamRow, error) {
 	ctx2, cancel := context.WithTimeout(ctx, paheTimeout)
 	defer cancel()
@@ -150,8 +150,8 @@ func (h *H) fetchPaheUpstream(ctx context.Context, id, ep string) ([]paheUpstrea
 	req.Header.Set("User-Agent", paheUA)
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	req.Header.Set("Referer", "https://animetsu.live/")
-	req.Header.Set("Origin", "https://animetsu.live")
+	req.Header.Set("Referer", "https://miru.live/")
+	req.Header.Set("Origin", "https://miru.live")
 	req.Header.Set("Sec-Fetch-Dest", "empty")
 	req.Header.Set("Sec-Fetch-Mode", "cors")
 	req.Header.Set("Sec-Fetch-Site", "same-origin")

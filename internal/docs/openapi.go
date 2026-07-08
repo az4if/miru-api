@@ -3,9 +3,9 @@ package docs
 const openapiJSON = `{
   "openapi": "3.0.3",
   "info": {
-    "title": "Animetsu API",
+    "title": "Miru API",
     "version": "1.0.0",
-    "description": "Thin, cached, normalized REST wrapper over animetsu.live's backend. Built-in HLS proxy, automatic server fallback, and a /demo player.\n\n- Use proxy_url returned by /api/watch with hls.js, ExoPlayer, AVPlayer, or VLC.\n- server=auto picks a working server automatically (recommended)."
+    "description": "Thin, cached, normalized REST wrapper over miru.live's backend. Built-in HLS proxy, automatic server fallback, and a /demo player.\n\n- Use proxy_url returned by /api/watch with hls.js, ExoPlayer, AVPlayer, or VLC.\n- server=auto picks a working server automatically (recommended)."
   },
   "servers": [{ "url": "/" }],
   "tags": [

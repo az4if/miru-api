@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/animetsu/api/internal/client"
+	"github.com/miru/api/internal/client"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -379,7 +379,7 @@ func (h *H) fetchTosho(ctx context.Context, query string) ([]toshoEntry, error) 
 		ctx2, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		req, _ := http.NewRequestWithContext(ctx2, http.MethodGet, url, nil)
-		req.Header.Set("User-Agent", "animetsu-api/1.0 (+downloads)")
+		req.Header.Set("User-Agent", "miru-api/1.0 (+downloads)")
 		req.Header.Set("Accept", "application/json")
 		resp, err := h.Client.HTTP().Do(req)
 		if err != nil {

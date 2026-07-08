@@ -1,5 +1,5 @@
 service:
-  name: animetsu-api
+  name: miru-api
   type: web
   ports:
     - port: 8080

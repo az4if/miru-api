@@ -1,4 +1,4 @@
-app = "animetsu-api"
+app = "miru-api"
 primary_region = "iad"
 
 [build]

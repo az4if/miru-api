@@ -8,14 +8,14 @@ COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
 ENV CGO_ENABLED=0 GOOS=linux
-RUN go build -trimpath -ldflags="-s -w" -o /out/animetsu-api ./cmd/server
+RUN go build -trimpath -ldflags="-s -w" -o /out/miru-api ./cmd/server
 
 # Final: distroless static. PORT is overridable; default 8080.
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /out/animetsu-api /animetsu-api
+COPY --from=build /out/miru-api /miru-api
 ENV PORT=8080 \
     RATE_LIMIT_RPM=120 \
     LOG_LEVEL=info
 EXPOSE 8080
 USER nonroot:nonroot
-ENTRYPOINT ["/animetsu-api"]
+ENTRYPOINT ["/miru-api"]
