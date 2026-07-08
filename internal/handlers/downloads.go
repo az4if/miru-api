@@ -114,6 +114,11 @@ func (h *H) Downloads(c *fiber.Ctx) error {
 	if id == "" || ep == "" {
 		return fiber.NewError(http.StatusBadRequest, "id and ep required")
 	}
+	resolved, err := h.resolveId(c.Context(), id)
+	if err != nil {
+		return fiber.NewError(http.StatusNotFound, err.Error())
+	}
+	id = resolved
 	wantQuality := strings.ToLower(strings.TrimSpace(c.Query("quality", "")))
 	wantGroup := strings.ToLower(strings.TrimSpace(c.Query("group", "")))
 	wantType := strings.ToLower(strings.TrimSpace(c.Query("type", "all")))

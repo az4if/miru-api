@@ -5,7 +5,7 @@ const openapiJSON = `{
   "info": {
     "title": "Miru API",
     "version": "1.0.0",
-    "description": "Thin, cached, normalized REST wrapper over miru.live's backend. Built-in HLS proxy, automatic server fallback, and a /demo player.\n\n- Use proxy_url returned by /api/watch with hls.js, ExoPlayer, AVPlayer, or VLC.\n- server=auto picks a working server automatically (recommended)."
+    "description": "Thin, cached, normalized REST wrapper combining Animetsu, Animex.one, and Miruro.to streams. Built-in HLS proxy, automatic server fallback, and a /demo player.\n\n- Use proxy_url returned by /api/watch with hls.js, ExoPlayer, AVPlayer, or VLC.\n- server=auto picks a working server automatically (recommended)."
   },
   "servers": [{ "url": "/" }],
   "tags": [
@@ -94,7 +94,7 @@ const openapiJSON = `{
         "parameters":[
           { "name":"id","in":"path","required":true,"schema":{"type":"string"} },
           { "name":"ep","in":"path","required":true,"schema":{"type":"string"} },
-          { "name":"server","in":"query","schema":{"type":"string","default":"auto","enum":["auto","pahe","kite","fsoft"]} },
+          { "name":"server","in":"query","schema":{"type":"string","default":"auto","enum":["auto","pahe","kite","fsoft","animex:Auto","miruro:ally"]} },
           { "name":"source_type","in":"query","schema":{"type":"string","enum":["sub","dub"],"default":"sub"} },
           { "name":"fallback","in":"query","schema":{"type":"boolean","default":true} }
         ],
@@ -109,7 +109,7 @@ const openapiJSON = `{
           { "name":"id","in":"path","required":true,"schema":{"type":"string"} },
           { "name":"ep","in":"path","required":true,"schema":{"type":"string"} },
           { "name":"quality","in":"query","schema":{"type":"string","enum":["1080p","720p","480p","360p","master"]} },
-          { "name":"server","in":"query","schema":{"type":"string","default":"auto","enum":["auto","pahe","kite","fsoft"]} },
+          { "name":"server","in":"query","schema":{"type":"string","default":"auto","enum":["auto","pahe","kite","fsoft","animex:Auto","miruro:ally"]} },
           { "name":"source_type","in":"query","schema":{"type":"string","enum":["sub","dub"],"default":"sub"} }
         ],
         "responses": { "200": { "description":"ok" } }
@@ -121,7 +121,7 @@ const openapiJSON = `{
         "parameters":[
           { "name":"id","in":"query","required":true,"schema":{"type":"string"} },
           { "name":"ep","in":"query","required":true,"schema":{"type":"string"} },
-          { "name":"server","in":"query","schema":{"type":"string","default":"auto","enum":["auto","pahe","kite","fsoft"]} },
+          { "name":"server","in":"query","schema":{"type":"string","default":"auto","enum":["auto","pahe","kite","fsoft","animex:Auto","miruro:ally"]} },
           { "name":"source_type","in":"query","schema":{"type":"string","default":"sub","enum":["sub","dub"]} },
           { "name":"fallback","in":"query","schema":{"type":"boolean","default":true} }
         ],

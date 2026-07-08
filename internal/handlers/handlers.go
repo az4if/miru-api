@@ -185,6 +185,11 @@ func (h *H) Info(c *fiber.Ctx) error {
 	if id == "" {
 		return fiber.NewError(http.StatusBadRequest, "id required")
 	}
+	resolved, err := h.resolveId(c.Context(), id)
+	if err != nil {
+		return fiber.NewError(http.StatusNotFound, err.Error())
+	}
+	id = resolved
 	return cached(h, c, "info:"+id, 30*time.Minute, func(ctx context.Context) (any, error) {
 		return h.fetchJSON(ctx, "/api/anime/info/"+id)
 	})
@@ -195,6 +200,11 @@ func (h *H) Episodes(c *fiber.Ctx) error {
 	if id == "" {
 		return fiber.NewError(http.StatusBadRequest, "id required")
 	}
+	resolved, err := h.resolveId(c.Context(), id)
+	if err != nil {
+		return fiber.NewError(http.StatusNotFound, err.Error())
+	}
+	id = resolved
 	return cached(h, c, "eps:"+id, 15*time.Minute, func(ctx context.Context) (any, error) {
 		return h.fetchJSON(ctx, "/api/anime/eps/"+id)
 	})
@@ -206,6 +216,11 @@ func (h *H) Views(c *fiber.Ctx) error {
 	if id == "" || ep == "" {
 		return fiber.NewError(http.StatusBadRequest, "id and ep required")
 	}
+	resolved, err := h.resolveId(c.Context(), id)
+	if err != nil {
+		return fiber.NewError(http.StatusNotFound, err.Error())
+	}
+	id = resolved
 	return cached(h, c, "views:"+id+":"+ep, 1*time.Minute, func(ctx context.Context) (any, error) {
 		return h.fetchJSON(ctx, "/api/anime/views/"+id+"/"+ep)
 	})
@@ -256,51 +271,117 @@ func (h *H) Servers(c *fiber.Ctx) error {
 	if id == "" {
 		return fiber.NewError(http.StatusBadRequest, "id required")
 	}
+	resolved, err := h.resolveId(c.Context(), id)
+	if err != nil {
+		return fiber.NewError(http.StatusNotFound, err.Error())
+	}
+	id = resolved
 	srcType := normalizeSourceType(c)
 	key := "servers:" + id + ":" + ep + ":" + srcType
 	return cached(h, c, key, 5*time.Minute, func(ctx context.Context) (any, error) {
-		// upstream list
-		var list []models.Server
-		if err := h.Client.GetJSON(ctx, "/api/anime/servers/"+id+"/"+ep, &list); err != nil {
-			return nil, err
-		}
-		// probe each in parallel
 		type result struct {
-			ID      string `json:"id"`
-			Default bool   `json:"default"`
-			Tip     string `json:"tip"`
-			Working bool   `json:"working"`
-			Sources int    `json:"sources"`
-			LatencyMS int  `json:"latency_ms"`
+			ID        string `json:"id"`
+			Default   bool   `json:"default"`
+			Tip       string `json:"tip"`
+			Working   bool   `json:"working"`
+			Sources   int    `json:"sources"`
+			LatencyMS int    `json:"latency_ms"`
 		}
-		out := make([]result, len(list))
-		var wg sync.WaitGroup
-		for i, s := range list {
-			i, s := i, s
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				start := time.Now()
-				pctx, cancel := context.WithTimeout(ctx, 8*time.Second)
-				defer cancel()
-				rw, err := h.fetchWatch(pctx, id, ep, s.ID, srcType)
-				ms := int(time.Since(start).Milliseconds())
-				if err != nil || rw == nil || len(rw.Sources) == 0 {
-					out[i] = result{ID: s.ID, Default: s.Default, Tip: s.Tip, Working: false, LatencyMS: ms}
-					return
+
+		var (
+			animetsuOut []result
+			animexOut   []result
+			miruroOut   []result
+			wgOuter     sync.WaitGroup
+		)
+
+		// 1. Animetsu fetch and probe
+		wgOuter.Add(1)
+		go func() {
+			defer wgOuter.Done()
+			var list []models.Server
+			if err := h.Client.GetJSON(ctx, "/api/anime/servers/"+id+"/"+ep, &list); err != nil {
+				return
+			}
+			resList := make([]result, len(list))
+			var wg sync.WaitGroup
+			for i, s := range list {
+				i, s := i, s
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					start := time.Now()
+					pctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+					defer cancel()
+					rw, err := h.fetchWatch(pctx, id, ep, s.ID, srcType)
+					ms := int(time.Since(start).Milliseconds())
+					if err != nil || rw == nil || len(rw.Sources) == 0 {
+						resList[i] = result{ID: "animetsu:" + s.ID, Default: s.Default, Tip: s.Tip, Working: false, LatencyMS: ms}
+						return
+					}
+					abs := absolutizeSource(rw.Sources[0], h.HLSProxyBase)
+					code, _, perr := h.Client.HeadOrGet(pctx, abs)
+					working := perr == nil && code < 400
+					resList[i] = result{
+						ID: "animetsu:" + s.ID, Default: s.Default, Tip: s.Tip,
+						Working: working, Sources: len(rw.Sources),
+						LatencyMS: int(time.Since(start).Milliseconds()),
+					}
+				}()
+			}
+			wg.Wait()
+			animetsuOut = resList
+		}()
+
+		// 2. Animex fetch
+		wgOuter.Add(1)
+		go func() {
+			defer wgOuter.Done()
+			epVal, _ := strconv.Atoi(ep)
+			if ax, err := h.animexServers(ctx, id, epVal, srcType); err == nil {
+				for _, s := range ax {
+					tip := "Soft sub, Multi quality"
+					if srcType == "dub" {
+						tip = "Hard sub, Multi quality"
+					}
+					animexOut = append(animexOut, result{
+						ID:      "animex:" + s,
+						Default: false,
+						Tip:     tip,
+						Working: true,
+						Sources: 1,
+					})
 				}
-				// Probe the first absolutized URL. If it 4xx/5xx, mark not working.
-				abs := absolutizeSource(rw.Sources[0], h.HLSProxyBase)
-				code, _, perr := h.Client.HeadOrGet(pctx, abs)
-				working := perr == nil && code < 400
-				out[i] = result{
-					ID: s.ID, Default: s.Default, Tip: s.Tip,
-					Working: working, Sources: len(rw.Sources),
-					LatencyMS: int(time.Since(start).Milliseconds()),
+			}
+		}()
+
+		// 3. Miruro fetch
+		wgOuter.Add(1)
+		go func() {
+			defer wgOuter.Done()
+			epVal, _ := strconv.Atoi(ep)
+			if mr, err := h.miruroServers(ctx, id, epVal, srcType); err == nil {
+				for _, s := range mr {
+					tip := "Hard sub, Multi quality"
+					if strings.ToLower(s) == "ally" {
+						tip = "Soft sub, Multi quality"
+					}
+					miruroOut = append(miruroOut, result{
+						ID:      "miruro:" + s,
+						Default: false,
+						Tip:     tip,
+						Working: true,
+						Sources: 1,
+					})
 				}
-			}()
-		}
-		wg.Wait()
+			}
+		}()
+
+		wgOuter.Wait()
+
+		out := append(animetsuOut, animexOut...)
+		out = append(out, miruroOut...)
+
 		// Sort working first, then by latency.
 		sort.SliceStable(out, func(i, j int) bool {
 			if out[i].Working != out[j].Working {
@@ -326,7 +407,7 @@ func absolutizeSource(s rawSource, hlsBase string) string {
 	if !strings.HasPrefix(rel, "/") {
 		rel = "/" + rel
 	}
-	return hlsBase + rel
+	return strings.TrimRight(hlsBase, "/") + rel
 }
 
 // Watch resolves playable sources for one episode, with optional automatic
@@ -338,6 +419,11 @@ func (h *H) Watch(c *fiber.Ctx) error {
 	if id == "" {
 		return fiber.NewError(http.StatusBadRequest, "id required")
 	}
+	resolved, err := h.resolveId(c.Context(), id)
+	if err != nil {
+		return fiber.NewError(http.StatusNotFound, err.Error())
+	}
+	id = resolved
 	server := c.Query("server", "auto")
 	srcType := normalizeSourceType(c)
 	fallback := c.Query("fallback", "true") != "false"
@@ -350,7 +436,22 @@ func (h *H) Watch(c *fiber.Ctx) error {
 
 	cacheKey := "watch:" + id + ":" + ep + ":" + server + ":" + srcType + ":fb=" + strconv.FormatBool(fallback)
 	return cached(h, c, cacheKey, 5*time.Minute, func(ctx context.Context) (any, error) {
-		order := buildServerOrder(h, ctx, id, ep, server, fallback)
+		if strings.HasPrefix(server, "animex:") {
+			realServer := strings.TrimPrefix(server, "animex:")
+			epVal, _ := strconv.Atoi(ep)
+			return h.animexWatch(ctx, id, epVal, realServer, srcType, selfBase)
+		}
+		if strings.HasPrefix(server, "miruro:") {
+			realServer := strings.TrimPrefix(server, "miruro:")
+			epVal, _ := strconv.Atoi(ep)
+			return h.miruroWatch(ctx, id, epVal, realServer, srcType, selfBase)
+		}
+
+		requestedServer := server
+		if strings.HasPrefix(requestedServer, "animetsu:") {
+			requestedServer = strings.TrimPrefix(requestedServer, "animetsu:")
+		}
+		order := buildServerOrder(h, ctx, id, ep, requestedServer, fallback)
 
 		var (
 			rw         *rawWatch
@@ -373,6 +474,9 @@ func (h *H) Watch(c *fiber.Ctx) error {
 			if !fallback || (perr == nil && code < 400) {
 				rw = r
 				usedServer = sv
+				if r.Server != "" {
+					usedServer = r.Server
+				}
 				break
 			}
 			lastErr = perr
@@ -386,7 +490,7 @@ func (h *H) Watch(c *fiber.Ctx) error {
 
 		out := models.WatchResponse{
 			ID:         id,
-			Server:     usedServer,
+			Server:     "animetsu:" + usedServer,
 			SourceType: srcType,
 			Skips:      rw.Skips,
 			Subtitles:  buildSubtitles(rw.Subtitles, selfBase),
@@ -437,37 +541,106 @@ func (h *H) Download(c *fiber.Ctx) error {
 	if id == "" || ep == "" {
 		return fiber.NewError(http.StatusBadRequest, "id and ep required")
 	}
+	resolved, err := h.resolveId(c.Context(), id)
+	if err != nil {
+		return fiber.NewError(http.StatusNotFound, err.Error())
+	}
+	id = resolved
 	wantQ := strings.ToLower(c.Query("quality", ""))
 	c.Request().URI().QueryArgs().Set("id", id)
 	c.Request().URI().QueryArgs().Set("ep", ep)
 	server := c.Query("server", "auto")
 	srcType := normalizeSourceType(c)
+	epVal, _ := strconv.Atoi(ep)
 
-	order := buildServerOrder(h, c.Context(), id, ep, server, true)
+	scheme := "https"
+	if c.Protocol() == "http" {
+		scheme = "http"
+	}
+	selfBase := scheme + "://" + c.Hostname()
 
-	var rw *rawWatch
-	var usedServer string
-	for _, sv := range order {
-		ctx, cancel := context.WithTimeout(c.Context(), 8*time.Second)
-		r, err := h.fetchWatch(ctx, id, ep, sv, srcType)
-		cancel()
-		if err != nil || r == nil || len(r.Sources) == 0 {
-			continue
+	var (
+		watchResp models.WatchResponse
+	)
+
+	if strings.HasPrefix(server, "animex:") {
+		realServer := strings.TrimPrefix(server, "animex:")
+		res, err := h.animexWatch(c.Context(), id, epVal, realServer, srcType, selfBase)
+		if err != nil {
+			return fiber.NewError(http.StatusBadGateway, err.Error())
 		}
-		abs := absolutizeSource(r.Sources[0], h.HLSProxyBase)
-		pctx, pcancel := context.WithTimeout(c.Context(), 5*time.Second)
-		code, _, perr := h.Client.HeadOrGet(pctx, abs)
-		pcancel()
-		if perr == nil && code < 400 {
-			rw, usedServer = r, sv
-			break
+		watchResp = res.(models.WatchResponse)
+	} else if strings.HasPrefix(server, "miruro:") {
+		realServer := strings.TrimPrefix(server, "miruro:")
+		res, err := h.miruroWatch(c.Context(), id, epVal, realServer, srcType, selfBase)
+		if err != nil {
+			return fiber.NewError(http.StatusBadGateway, err.Error())
+		}
+		watchResp = res.(models.WatchResponse)
+	} else {
+		requestedServer := server
+		if strings.HasPrefix(requestedServer, "animetsu:") {
+			requestedServer = strings.TrimPrefix(requestedServer, "animetsu:")
+		}
+		order := buildServerOrder(h, c.Context(), id, ep, requestedServer, true)
+		var rw *rawWatch
+		var usedServer string
+		for _, sv := range order {
+			ctx, cancel := context.WithTimeout(c.Context(), 8*time.Second)
+			r, err := h.fetchWatch(ctx, id, ep, sv, srcType)
+			cancel()
+			if err != nil || r == nil || len(r.Sources) == 0 {
+				continue
+			}
+			abs := absolutizeSource(r.Sources[0], h.HLSProxyBase)
+			pctx, pcancel := context.WithTimeout(c.Context(), 5*time.Second)
+			code, _, perr := h.Client.HeadOrGet(pctx, abs)
+			pcancel()
+			if perr == nil && code < 400 {
+				rw = r
+				usedServer = sv
+				if r.Server != "" {
+					usedServer = r.Server
+				}
+				break
+			}
+		}
+		if rw == nil {
+			return fiber.NewError(http.StatusBadGateway, "no working server")
+		}
+
+		var expandedSources []rawSource
+		for _, s := range rw.Sources {
+			expandedSources = append(expandedSources, h.expandMasterPlaylist(c.Context(), s)...)
+		}
+
+		var watchSources []models.WatchSource
+		for _, s := range expandedSources {
+			abs := absolutizeSource(s, h.HLSProxyBase)
+			watchSources = append(watchSources, models.WatchSource{
+				Quality:   s.Quality,
+				URL:       abs,
+				Type:      s.Type,
+				OldHLS:    s.OldHLS,
+				NeedProxy: s.NeedProxy,
+				ProxyURL:  selfBase + "/api/proxy/hls?url=" + queryEscape(abs),
+			})
+		}
+
+		watchResp = models.WatchResponse{
+			ID:         id,
+			Episode:    epVal,
+			Server:     "animetsu:" + usedServer,
+			SourceType: srcType,
+			Sources:    watchSources,
+			Subtitles:  buildSubtitles(rw.Subtitles, selfBase),
 		}
 	}
-	if rw == nil {
-		return fiber.NewError(http.StatusBadGateway, "no working server")
+
+	if len(watchResp.Sources) == 0 {
+		return fiber.NewError(http.StatusBadGateway, "no sources returned")
 	}
 
-	// Pick best source.
 	scoreOf := func(q string) int {
 		q = strings.ToLower(q)
 		switch {
@@ -480,17 +653,14 @@ func (h *H) Download(c *fiber.Ctx) error {
 		case strings.Contains(q, "360"):
 			return 360
 		case q == "master":
-			return 9999 // master playlist beats variants
+			return 9999
 		}
 		return 0
 	}
-	var expandedSources []rawSource
-	for _, s := range rw.Sources {
-		expandedSources = append(expandedSources, h.expandMasterPlaylist(c.Context(), s)...)
-	}
-	var best rawSource
+
+	var best models.WatchSource
 	if wantQ != "" {
-		for _, s := range expandedSources {
+		for _, s := range watchResp.Sources {
 			if strings.Contains(strings.ToLower(s.Quality), wantQ) {
 				best = s
 				break
@@ -498,32 +668,26 @@ func (h *H) Download(c *fiber.Ctx) error {
 		}
 	}
 	if best.URL == "" {
-		best = expandedSources[0]
-		for _, s := range expandedSources[1:] {
+		best = watchResp.Sources[0]
+		for _, s := range watchResp.Sources[1:] {
 			if scoreOf(s.Quality) > scoreOf(best.Quality) {
 				best = s
 			}
 		}
 	}
-	abs := absolutizeSource(best, h.HLSProxyBase)
-	scheme := "https"
-	if c.Protocol() == "http" {
-		scheme = "http"
-	}
-	selfBase := scheme + "://" + c.Hostname()
-	proxyURL := selfBase + "/api/proxy/hls?url=" + queryEscape(abs)
+
 	filename := id + "_ep" + ep + "_" + strings.ToLower(best.Quality) + "_" + srcType + ".mp4"
-	hint := "HLS stream — mux to MP4 with: ffmpeg -i \"" + proxyURL + "\" -c copy " + filename
+	hint := "HLS stream — mux to MP4 with: ffmpeg -i \"" + best.ProxyURL + "\" -c copy " + filename
 	return ok(c, fiber.Map{
 		"id":        id,
 		"episode":   ep,
-		"server":    usedServer,
+		"server":    watchResp.Server,
 		"quality":   best.Quality,
 		"type":      best.Type,
-		"url":       abs,
-		"proxy_url": proxyURL,
+		"url":       best.URL,
+		"proxy_url": best.ProxyURL,
 		"filename":  filename,
-		"subtitles": buildSubtitles(rw.Subtitles, selfBase),
+		"subtitles": watchResp.Subtitles,
 		"hint":      hint,
 	})
 }
@@ -810,4 +974,158 @@ func (h *H) expandMasterPlaylist(ctx context.Context, src rawSource) []rawSource
 	}
 
 	return []rawSource{src}
+}
+
+func (h *H) resolveId(ctx context.Context, id string) (string, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return "", fmt.Errorf("empty id")
+	}
+
+	isHex := len(id) == 24
+	if isHex {
+		for _, r := range id {
+			if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+				isHex = false
+				break
+			}
+		}
+	}
+	if isHex {
+		return id, nil
+	}
+
+	cacheKey := "mapping:" + id
+	if val, ok := h.Cache.Get(cacheKey); ok {
+		if mapped, okStr := val.(string); okStr {
+			return mapped, nil
+		}
+	}
+
+	anilistID, err := strconv.Atoi(id)
+	if err != nil {
+		return "", fmt.Errorf("invalid id format: %s", id)
+	}
+
+	type alResponse struct {
+		Data struct {
+			Media struct {
+				Title struct {
+					Romaji  string `json:"romaji"`
+					English string `json:"english"`
+				} `json:"title"`
+			} `json:"media"`
+		} `json:"data"`
+	}
+
+	var al alResponse
+	payload := map[string]any{
+		"query":     "query ($id: Int) { Media (id: $id, type: ANIME) { title { romaji english } } }",
+		"variables": map[string]any{"id": anilistID},
+	}
+
+	reqBody, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://graphql.anilist.co", strings.NewReader(string(reqBody)))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := h.Client.HTTP().Do(req)
+	if err != nil {
+		return "", fmt.Errorf("anilist api call: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("anilist api returned status %d", resp.StatusCode)
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&al); err != nil {
+		return "", fmt.Errorf("decode anilist response: %w", err)
+	}
+
+	titleRomaji := strings.TrimSpace(al.Data.Media.Title.Romaji)
+	titleEnglish := strings.TrimSpace(al.Data.Media.Title.English)
+
+	if titleRomaji == "" && titleEnglish == "" {
+		return "", fmt.Errorf("no titles found on AniList for ID %d", anilistID)
+	}
+
+	titlesToSearch := []string{}
+	if titleRomaji != "" {
+		titlesToSearch = append(titlesToSearch, titleRomaji)
+	}
+	if titleEnglish != "" && titleEnglish != titleRomaji {
+		titlesToSearch = append(titlesToSearch, titleEnglish)
+	}
+
+	type searchResult struct {
+		ID         string `json:"id"`
+		Title      struct {
+			Romaji  string `json:"romaji"`
+			English string `json:"english"`
+		} `json:"title"`
+		CoverImage struct {
+			Large  string `json:"large"`
+			Medium string `json:"medium"`
+			Small  string `json:"small"`
+		} `json:"cover_image"`
+		Banner string `json:"banner"`
+	}
+
+	type searchResponse struct {
+		Results []searchResult `json:"results"`
+	}
+
+	coverRegex := regexp.MustCompile(`(?:bx|b|banner/|/)([0-9]+)`)
+
+	for _, title := range titlesToSearch {
+		var sResp searchResponse
+		searchPath := "/api/anime/search?query=" + url.QueryEscape(title)
+		if err := h.Client.GetJSON(ctx, searchPath, &sResp); err != nil {
+			continue
+		}
+
+		for _, r := range sResp.Results {
+			var candidateID int
+			for _, img := range []string{r.CoverImage.Large, r.CoverImage.Medium, r.CoverImage.Small, r.Banner} {
+				if img == "" {
+					continue
+				}
+				if m := coverRegex.FindStringSubmatch(img); len(m) == 2 {
+					if cid, _ := strconv.Atoi(m[1]); cid > 0 {
+						candidateID = cid
+						break
+					}
+				}
+			}
+
+			if candidateID == anilistID {
+				h.Cache.Set(cacheKey, r.ID, 48 * time.Hour)
+				return r.ID, nil
+			}
+		}
+
+		for _, r := range sResp.Results {
+			type infoResponse struct {
+				AniListID int `json:"anilist_id"`
+			}
+			var info infoResponse
+			infoPath := "/api/anime/info/" + r.ID
+			if err := h.Client.GetJSON(ctx, infoPath, &info); err == nil {
+				if info.AniListID == anilistID {
+					h.Cache.Set(cacheKey, r.ID, 48 * time.Hour)
+					return r.ID, nil
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("could not resolve AniList ID %d to upstream anime ID", anilistID)
 }

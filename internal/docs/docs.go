@@ -298,13 +298,13 @@ details pre{margin:0;padding:0 14px 14px;color:#cdd5e0;font-size:12px;max-height
 <div class="shell">
   <div class="head">
     <div class="logo"></div>
-    <div class="brand">Miru Player <small>HLS · Soft subs · Auto server</small></div>
+    <div class="brand">Miru Player <small>Multi-source (Animetsu, Animex, Miruro) · Soft subs · Auto server</small></div>
     <div class="spacer"></div>
     <a class="tag" href="/docs"><span class="dot"></span>API · v1.0.0</a>
   </div>
 
   <div class="bar">
-    <input id="id" placeholder="Anime ID" value="6989bcdf29cf95f4eb03e9f5" autocomplete="off"/>
+    <input id="id" placeholder="AniList ID (e.g. 154587)" value="154587" autocomplete="off"/>
     <input id="ep" placeholder="Episode" value="1" autocomplete="off"/>
     <button id="go">
       <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M8 5v14l11-7z"/></svg>
@@ -318,9 +318,11 @@ details pre{margin:0;padding:0 14px 14px;color:#cdd5e0;font-size:12px;max-height
       <button class="chip active" data-type="sub">Sub</button>
       <button class="chip" data-type="dub">Dub</button>
     </div>
-    <div class="group" id="serverGrp">
+    <div class="group">
       <span class="label">Server</span>
-      <button class="chip active" data-server="auto">Auto</button>
+      <select id="serverSelect" style="background:transparent; color:var(--text); border:0; font:inherit; outline:none; cursor:pointer; padding:0 8px; font-weight:500; min-width:80px;">
+        <option value="auto" style="background:#0e131c; color:#e7eaf3;">Auto</option>
+      </select>
     </div>
     <div class="group" style="margin-left:auto">
       <button class="chip" id="probe" title="Probe servers">Probe servers</button>
@@ -460,31 +462,42 @@ function bindGroup(groupId, attr, onChange) {
     onChange(b.getAttribute('data-'+attr) || '');
   });
 }
-bindGroup('typeGrp','type', v => { currentType = v; renderServerChips(); });
-bindGroup('serverGrp','server', v => { currentServer = v; });
+bindGroup('typeGrp','type', v => { currentType = v; probeServers(true); });
 
-function renderServerChips() {
-  const g = $("serverGrp");
-  // remove existing dynamic chips
-  [...g.querySelectorAll('button.chip[data-server]')].forEach(b => b.remove());
-  const make = (id, label, latency) => {
-    const b = document.createElement('button');
-    b.className = 'chip' + (id === currentServer ? ' active' : '');
-    b.setAttribute('data-server', id);
-    b.textContent = label;
-    if (typeof latency === 'number') {
-      const l = document.createElement('span'); l.className='lat'; l.textContent = latency+'ms';
-      b.appendChild(l);
-    }
-    g.appendChild(b);
+function renderServerSelect() {
+  const sel = $("serverSelect");
+  const cur = currentServer;
+  sel.innerHTML = '';
+  const addOption = (val, text) => {
+    const opt = document.createElement('option');
+    opt.value = val;
+    opt.textContent = text;
+    opt.style.background = '#0e131c';
+    opt.style.color = '#e7eaf3';
+    if (val === cur) opt.selected = true;
+    sel.appendChild(opt);
   };
-  make('auto', 'Auto');
+  addOption('auto', 'Auto');
   for (const s of availableServers) {
     if (s.id === 'auto') continue;
-    make(s.id, s.id);
+    let label = s.id;
+    if (typeof s.latency === 'number' && s.latency > 0) {
+      label += ' (' + s.latency + 'ms)';
+    }
+    if (s.working === false) {
+      label += ' [offline]';
+    }
+    addOption(s.id, label);
   }
 }
-renderServerChips();
+renderServerSelect();
+
+$("serverSelect").addEventListener('change', e => {
+  currentServer = e.target.value;
+  if (watchData) {
+    loadAndPlay();
+  }
+});
 
 // ---- HLS player --------------------------------------------------------
 function destroyHls(){ if (hls) { try{hls.destroy();}catch(e){} hls=null; } }
@@ -868,21 +881,7 @@ async function probeServers(silent) {
     log('servers '+dt+'ms', r);
     if (!r.success) { if (!silent) setStat('Probe failed.'); return; }
     availableServers = (r.data||[]).map(s => ({ id:s.id, working:s.working, latency:s.latency_ms, default:s.default }));
-    const g = $("serverGrp");
-    [...g.querySelectorAll('button.chip[data-server]')].forEach(b => b.remove());
-    const make = (id, label, latency, working) => {
-      const b = document.createElement('button');
-      b.className = 'chip' + (id === currentServer ? ' active' : '') + (working === false ? ' bad' : '');
-      b.setAttribute('data-server', id);
-      b.textContent = label;
-      if (typeof latency === 'number') {
-        const l = document.createElement('span'); l.className='lat'; l.textContent = latency+'ms';
-        b.appendChild(l);
-      }
-      g.appendChild(b);
-    };
-    make('auto', 'Auto');
-    for (const s of availableServers) make(s.id, s.id, s.latency, s.working);
+    renderServerSelect();
     if (!silent) setStat('Probed in '+dt+'ms · '+availableServers.filter(s=>s.working).length+'/'+availableServers.length+' working');
   } catch (e) { if (!silent) setStat('Probe failed: '+e.message); }
 }

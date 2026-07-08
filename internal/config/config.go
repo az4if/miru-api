@@ -49,9 +49,9 @@ func Load() *Config {
 		RateLimitRPM:      envInt("RATE_LIMIT_RPM", 60),
 		CacheDefaultTTL:   envDuration("CACHE_DEFAULT_TTL", 10*time.Minute),
 		UpstreamTimeout:   envDuration("UPSTREAM_TIMEOUT", 15*time.Second),
-		UpstreamBase:      env("UPSTREAM_BASE", "https://miru.live/v2"),
-		HLSProxyBase:      env("HLS_PROXY_BASE", "https://swiftstream.top/proxy"),
-		UpstreamReferer:   env("UPSTREAM_REFERER", "https://miru.live/"),
+		UpstreamBase:      env("UPSTREAM_BASE", "https://animetsu.live/v2"),
+		HLSProxyBase:      env("HLS_PROXY_BASE", "https://animetsu.live"),
+		UpstreamReferer:   env("UPSTREAM_REFERER", "https://animetsu.live/"),
 		UpstreamUserAgent: env("UPSTREAM_USER_AGENT", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"),
 		LogLevel:          env("LOG_LEVEL", "info"),
 	}
