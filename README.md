@@ -1,5 +1,8 @@
 # miru-api
 
+> [!WARNING]
+> **Project Status: No Longer Maintained.** The upstream source, [Animetsu](https://animetsu.live/), is dead/scrapped. As a result, this repository will receive **no further updates**. Endpoints relying on `UPSTREAM_BASE` may no longer function correctly.
+
 [![Go Version](https://img.shields.io/github/go-mod/go-version/miru/api?label=Go)](https://go.dev)
 [![License](https://img.shields.io/github/license/miru/api?label=License)](LICENSE)
 
